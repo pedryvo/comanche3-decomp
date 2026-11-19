@@ -1,0 +1,9 @@
+[package]
+name = "comanche3-mvp"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[dependencies]
+font8x8 = "0.3"
+minifb = { version = "0.28", default-features = false, features = ["x11"] }
