@@ -17,7 +17,7 @@ _Fly over terrain from the original DOS game in a resizable window with 1080p an
 
 ## 🚁 About
 
-**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through a waypoint. The default chase camera shows the original high-detail desert Comanche exterior assembled from the `PLAYER.AI` model parts, with its textures and animated rotors. It uses simplified flight controls and a waypoint objective written for the prototype.
+**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through three waypoints in a navigation training mission. The default chase camera shows the original high-detail desert Comanche exterior assembled from the `PLAYER.AI` model parts, with its textures and animated rotors. It uses simplified flight controls and a training route written for the prototype.
 
 > [!IMPORTANT]
 > You need your own copy of the DOS edition’s `RESOURCE.RES`. The repository contains the engine source, tools, and research notes. Original game data stays in your local installation.
@@ -28,16 +28,18 @@ _Fly over terrain from the original DOS game in a resizable window with 1080p an
 |---|---|---|
 | Resource archive and terrain | ✅ MVP | Direct `RESOURCE2xxx` loading and LZP1 decoding for the two `c1m3` terrain layers |
 | Voxel-style renderer | ✅ MVP | Perspective terrain, fog, waypoint HUD, and 1080p and 4K render modes |
-| Playable flight | ✅ MVP | Takeoff, steering, altitude control, and a waypoint completion trigger |
-| Mission scripting | 🔍 Under analysis | Rust parser and headless interpreter. 2,124 campaign rules inventoried · [trigger census](docs/mission-triggers.md) |
+| Playable flight | ✅ MVP | Takeoff, steering, altitude control, and three ordered waypoint triggers and mission completion |
+| Mission scripting | 🔍 Under analysis | Rust parser and interpreter driving the training route. 2,124 campaign rules inventoried · [trigger census](docs/mission-triggers.md) |
 | Original flight behavior and AI | ⏳ Planned | Compare behavior against the DOS executable |
 | Platform validation | 🟡 Partial | Interactive demo verified on Linux. Windows validation is pending. |
 
 ## 🧭 Roadmap
 
-1. Load the original terrain and deliver a playable waypoint demo. **Complete.**
+See the [work plan](docs/PLAN.md) for dependencies and acceptance criteria.
+
+1. Load the original terrain and deliver a playable navigation training mission. **Complete.**
 2. Verify trigger timing, condition order, and AI state changes against the DOS game.
-3. Run an original mission end to end, then expand coverage across the single-player campaign.
+3. Expand the trigger vocabulary and validate it with new training missions.
 4. Validate Windows builds, rendering performance, and input on both platforms.
 
 ## 🔧 Building and running
@@ -59,7 +61,7 @@ Hold **Space + W** to take off toward the first waypoint. Use **W/S** to acceler
 - `--1080p` renders at 1920 × 1080. `--4k` renders at 3840 × 2160.
 - `--cockpit` starts in first-person view.
 - `--demo` flies the waypoint route automatically in the window.
-- `--smoke` verifies terrain loading, waypoint completion, and rendering without opening a window. Combine it with either resolution flag.
+- `--smoke` verifies terrain loading, ordered waypoint completion, reset, and rendering without opening a window. Combine it with either resolution flag.
 
 In the chase view, drag with the **right mouse button** to orbit the helicopter. **J/L** orbit left and right, and **I/K** raise and lower the view.
 
@@ -70,9 +72,10 @@ In the chase view, drag with the **right mouse button** to orbit the helicopter.
 | [`src/terrain.rs`](src/terrain.rs) | Archive reader, LZP1 decoder, and terrain sampling |
 | [`src/render.rs`](src/render.rs) | CPU heightfield renderer and waypoint marker |
 | [`src/aircraft.rs`](src/aircraft.rs) | Original 3DO exterior mesh, PCX textures, and rotor rendering |
-| [`src/flight.rs`](src/flight.rs) | Prototype flight controls and waypoint logic |
+| [`src/flight.rs`](src/flight.rs) | Prototype flight controls and airborne state |
 | [`src/main.rs`](src/main.rs) | Window, keyboard input, HUD, and smoke test |
 | [`src/mission.rs`](src/mission.rs), [`src/trigger_runtime.rs`](src/trigger_runtime.rs) | Mission trigger parser and headless rule evaluator |
+| [`src/training.rs`](src/training.rs) | First training mission and its connection to flight state |
 | [`tools/trigger_census.py`](tools/trigger_census.py) | Inventory of conditions, operators, and actions in extracted mission files |
 | [`docs/mission-triggers.md`](docs/mission-triggers.md) | Reproducible census and open questions, in Brazilian Portuguese |
 

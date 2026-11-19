@@ -35,8 +35,8 @@ O censo em Rust leu 46 arquivos e 2.150 regras. O segundo comando trata
 somente os predicados fornecidos como verdadeiros e registra as ações
 emitidas. Com as entradas acima, saem três ações no primeiro tick e
 nenhuma no segundo. O teste mede o interpretador, sem áudio, IA ou estado
-de voo. No protótipo jogável, o waypoint simplificado continua usando
-seu próprio estado.
+de voo. No protótipo jogável, o mesmo interpretador recebe o estado do voo para
+conduzir uma missão de treinamento com três pontos sequenciais.
 
 O avaliador provisório trata `and` e `andn` como parte de uma conjunção
 e usa `or` para começar a próxima conjunção. A repetição das mesmas

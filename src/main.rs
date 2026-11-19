@@ -4,6 +4,7 @@ mod mission;
 mod mission_cli;
 mod render;
 mod terrain;
+mod training;
 mod trigger_runtime;
 
 use aircraft::Aircraft;
@@ -14,6 +15,7 @@ use render::{ExternalView, Orbit};
 use std::path::Path;
 use std::time::Instant;
 use terrain::Terrain;
+use training::Training;
 
 fn main() {
     if let Err(error) = run() {
@@ -57,17 +59,29 @@ fn run() -> Result<(), String> {
     let aircraft = Aircraft::load(resources)?;
     let mut orbit = Orbit::default();
     let mut flight = Flight::new(&terrain);
+    let program = Training::program()?;
+    let mut training = Training::new(&program, &mut flight);
     let mut frame = vec![0; size.0 * size.1];
     let scale = (size.0 / 640).max(1);
 
     if smoke {
-        let start = Instant::now();
-        for tick in 0..240 {
+        check_training_guards(&terrain, &program)?;
+        let (mut visited, total) = training.progress();
+        for tick in 0..360 {
             flight.step(&terrain, demo_controls(tick as f32 / 60.0), 1.0 / 60.0);
+            training.tick(&mut flight)?;
+            let (current, _) = training.progress();
+            if current > visited {
+                println!("Ponto {current}/{total} confirmado");
+                visited = current;
+            }
         }
-        if !flight.complete {
-            return Err("O voo de teste nao atingiu o waypoint".into());
+        if !flight.complete || visited != total {
+            return Err(format!(
+                "O voo de teste terminou com {visited}/{total} pontos"
+            ));
         }
+        let start = Instant::now();
         for tick in 0..10 {
             orbit.rotate(std::f32::consts::TAU / 10.0, 0.05);
             paint(
@@ -76,6 +90,7 @@ fn run() -> Result<(), String> {
                 scale,
                 &terrain,
                 &flight,
+                &training,
                 chase.then_some(ExternalView {
                     aircraft: &aircraft,
                     orbit: &orbit,
@@ -84,15 +99,22 @@ fn run() -> Result<(), String> {
             );
             std::hint::black_box(&frame);
         }
+        let render_elapsed = start.elapsed();
+        flight = Flight::new(&terrain);
+        training = Training::new(&program, &mut flight);
+        training.tick(&mut flight)?;
+        if flight.complete || training.progress() != (0, total) {
+            return Err("O treinamento manteve o progresso apos reiniciar".into());
+        }
         let distinct = frame.iter().any(|pixel| *pixel != frame[0]);
         if !distinct {
             return Err("O renderer produziu uma imagem uniforme".into());
         }
         println!(
-            "Waypoint atingido; {}x{}; {:.2} ms/quadro (renderer + HUD, sem janela)",
+            "Treinamento concluido; {}x{}; {:.2} ms/quadro (renderer + HUD, sem janela)",
             size.0,
             size.1,
-            start.elapsed().as_secs_f64() * 100.0
+            render_elapsed.as_secs_f64() * 100.0
         );
         return Ok(());
     }
@@ -117,6 +139,7 @@ fn run() -> Result<(), String> {
         let now = Instant::now();
         if window.is_key_pressed(Key::R, KeyRepeat::No) {
             flight = Flight::new(&terrain);
+            training = Training::new(&program, &mut flight);
             started = now;
         }
         if window.is_key_pressed(Key::V, KeyRepeat::No) {
@@ -156,6 +179,7 @@ fn run() -> Result<(), String> {
             mouse_anchor = None;
         }
         flight.step(&terrain, controls, dt);
+        training.tick(&mut flight)?;
         rotor_angle = (rotor_angle + dt * 24.0).rem_euclid(std::f32::consts::TAU);
         previous = now;
         paint(
@@ -164,6 +188,7 @@ fn run() -> Result<(), String> {
             scale,
             &terrain,
             &flight,
+            &training,
             chase.then_some(ExternalView {
                 aircraft: &aircraft,
                 orbit: &orbit,
@@ -173,6 +198,33 @@ fn run() -> Result<(), String> {
         window
             .update_with_buffer(&frame, size.0, size.1)
             .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn check_training_guards(terrain: &Terrain, program: &mission::Program) -> Result<(), String> {
+    let mut flight = Flight::new(terrain);
+    let mut training = Training::new(program, &mut flight);
+    flight.z = flight.waypoint_z;
+    training.tick(&mut flight)?;
+    if training.progress().0 != 0 || flight.complete {
+        return Err("O treinamento aceitou uma passagem no solo".into());
+    }
+
+    flight.z += 45.0;
+    for _ in 0..10 {
+        flight.step(
+            terrain,
+            Controls {
+                climb: true,
+                ..Controls::default()
+            },
+            1.0 / 60.0,
+        );
+    }
+    training.tick(&mut flight)?;
+    if !flight.is_airborne() || training.progress().0 != 0 || flight.complete {
+        return Err("O treinamento aceitou uma passagem fora de ordem".into());
     }
     Ok(())
 }
@@ -192,19 +244,22 @@ fn paint(
     scale: usize,
     terrain: &Terrain,
     flight: &Flight,
+    training: &Training<'_>,
     chase: Option<ExternalView<'_>>,
 ) {
     render::draw(frame, size, terrain, flight, chase);
     let distance = (flight.x - flight.waypoint_x).hypot(flight.z - flight.waypoint_z);
+    let (visited, total) = training.progress();
     let objective = if flight.complete {
-        "WAYPOINT ATINGIDO".to_owned()
+        format!("TREINAMENTO CONCLUIDO  {visited}/{total}")
     } else {
-        format!("WAYPOINT {:03.0}", distance)
+        format!("PONTO {}/{total}  DIST {:03.0}", visited + 1, distance)
     };
     let telemetry = format!("ALT {:03.0}  VEL {:02.0}", flight.altitude, flight.speed);
     let controls = "ESPACO SUBIR | SHIFT DESCER | WASD VOAR | V CAMERA | R REINICIAR";
     for (line, label) in [
         objective.as_str(),
+        training.message(),
         &telemetry,
         controls,
         "IJKL OU BOTAO DIREITO: GIRAR CAMERA",

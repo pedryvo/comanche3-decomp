@@ -2,7 +2,6 @@ use crate::terrain::Terrain;
 
 const LANDED_CLEARANCE: f32 = 2.0;
 const MAX_CLEARANCE: f32 = 160.0;
-const WAYPOINT_RADIUS: f32 = 12.0;
 
 #[derive(Default)]
 pub struct Controls {
@@ -51,8 +50,7 @@ impl Flight {
         self.yaw = (self.yaw + turn * 1.4 * dt).rem_euclid(std::f32::consts::TAU);
         self.clearance = (self.clearance + lift * 25.0 * dt).clamp(LANDED_CLEARANCE, MAX_CLEARANCE);
 
-        let airborne = self.clearance > LANDED_CLEARANCE + 1.0;
-        if airborne {
+        if self.is_airborne() {
             let throttle = axis(controls.accelerate, controls.brake);
             self.speed = (self.speed + throttle * 22.0 * dt).clamp(0.0, 45.0);
             let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
@@ -62,12 +60,10 @@ impl Flight {
             self.speed = 0.0;
         }
         self.altitude = terrain.sample(self.x, self.z).0 + self.clearance;
+    }
 
-        let dx = self.x - self.waypoint_x;
-        let dz = self.z - self.waypoint_z;
-        if airborne && dx * dx + dz * dz <= WAYPOINT_RADIUS * WAYPOINT_RADIUS {
-            self.complete = true;
-        }
+    pub(crate) fn is_airborne(&self) -> bool {
+        self.clearance > LANDED_CLEARANCE + 1.0
     }
 }
 
