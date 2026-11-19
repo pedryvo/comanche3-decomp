@@ -18,6 +18,7 @@ O primeiro percurso implementado é um treinamento de navegação com três pont
 **Critério de conclusão.** O jogador consegue decolar, cruzar os três pontos em ordem e receber a mensagem de conclusão. Aproximar-se do ponto no solo ou cruzar um ponto fora de ordem mantém o objetivo atual. Reiniciar volta ao primeiro ponto e permite concluir o percurso novamente. Executar `--demo` para observar a sessão na janela e `--smoke` para testar o percurso sem abrir uma janela.
 
 ## Fase 2 — Verificação de compatibilidade
+O DOS original já chegou ao cockpit em uma cópia temporária com a placa SB16 emulada. [Configuração e evidência de execução](dos-reference.md)
 
 Usar a matriz existente como amostra para comparar a interpretação dos dados com observações registradas no DOS. `c1m3`, `c1m1`, `c4m4` e `c5m7` cobrem os 34 nomes distintos em 240 regras. Usar `c3m2` para investigar a precedência quando `or` e `andn` aparecem juntos, e `c3m4` para investigar os efeitos de `setai` e o argumento com byte NUL. [Matriz e casos prioritários](mission-triggers.md#interpretador-rust)
 
