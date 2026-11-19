@@ -6,7 +6,7 @@ O MVP em Rust já abre em Linux, lê o terreno do `RESOURCE.RES` fornecido pelo 
 
 ## Fase 1 — Primeira missão jogável
 
-O primeiro percurso implementado é um treinamento de navegação com três pontos de passagem sobre o terreno do MVP. O teste automatizado cobre a sequência, a passagem no solo ou fora de ordem e o reinício. A verificação manual do percurso ainda está pendente. O interpretador consulta a posição e o estado de voo do jogador, avança o objetivo na ordem do percurso e encerra a missão após o terceiro ponto.
+O primeiro percurso implementado é um treinamento de navegação com três pontos de passagem sobre o terreno do MVP. O teste automatizado cobre a sequência, a passagem no solo ou fora de ordem e o reinício. A verificação manual do percurso ainda está pendente. O interpretador consulta a posição e o estado de voo do jogador, avança o objetivo na ordem do percurso e libera o pouso após o terceiro ponto e encerra a missão ao confirmar o pouso perto do marcador final.
 
 | Frente | Trabalho | Dependência |
 |---|---|---|
@@ -15,7 +15,7 @@ O primeiro percurso implementado é um treinamento de navegação com três pont
 | Interface | Mostrar objetivo ativo, progresso, conclusão e reinício | Estado da missão |
 | Verificação | Exercitar o percurso, a passagem fora de ordem e o reinício | Integração entre voo, gatilhos e interface |
 
-**Critério de conclusão.** O jogador consegue decolar, cruzar os três pontos em ordem e receber a mensagem de conclusão. Aproximar-se do ponto no solo ou cruzar um ponto fora de ordem mantém o objetivo atual. Reiniciar volta ao primeiro ponto e permite concluir o percurso novamente. Executar `--demo` para observar a sessão na janela e `--smoke` para testar o percurso sem abrir uma janela.
+**Critério de conclusão.** O jogador consegue decolar, cruzar os três pontos em ordem, pousar no ponto final e receber o debriefing. Aproximar-se do ponto no solo ou cruzar um ponto fora de ordem mantém o objetivo atual. Reiniciar volta ao primeiro ponto e permite concluir o percurso novamente. Executar `--demo` para observar a sessão na janela e `--smoke` para testar o percurso sem abrir uma janela.
 
 ## Fase 2 — Verificação de compatibilidade
 O DOS original já chegou ao cockpit em uma cópia temporária com a placa SB16 emulada. [Configuração e evidência de execução](dos-reference.md)
@@ -46,5 +46,10 @@ cargo run --release -- --smoke --4k --training missions/turns.route
 
 As duas execuções foram concluídas no Linux, com três e quatro pontos
 respectivamente. O teste automatizado usa o mesmo piloto de demonstração
-para ambos os percursos. A validação no Windows e a comparação com o DOS
-seguem pendentes.
+para ambos os percursos. O build nativo do Windows roda no GitHub Actions. O voo interativo no
+Windows e a comparação semântica com o DOS seguem pendentes.
+
+O percurso padrão acrescenta uma regra opcional `landed, N` → `finish, N`
+depois das regras de navegação, com `N` igual ao número de pontos mais
+um. O local de pouso é o último ponto da rota. O teste de aceitação da
+prévia está em [`tools/verify_training.sh`](../tools/verify_training.sh).

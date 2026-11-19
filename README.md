@@ -17,7 +17,7 @@ _Fly over terrain from the original DOS game in a resizable window with 1080p an
 
 ## 🚁 About
 
-**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through three waypoints in a navigation training mission. The default chase camera shows the original high-detail desert Comanche exterior assembled from the `PLAYER.AI` model parts, with its textures and animated rotors. It uses simplified flight controls and a training route written for the prototype.
+**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through three waypoints and land at the final marker in a navigation training mission. The default chase camera shows the original high-detail desert Comanche exterior assembled from the `PLAYER.AI` model parts, with its textures and animated rotors. It uses simplified flight controls and a training route written for the prototype.
 
 > [!IMPORTANT]
 > You need your own copy of the DOS edition’s `RESOURCE.RES`. The repository contains the engine source, tools, and research notes. Original game data stays in your local installation.
@@ -28,10 +28,10 @@ _Fly over terrain from the original DOS game in a resizable window with 1080p an
 |---|---|---|
 | Resource archive and terrain | ✅ MVP | Direct `RESOURCE2xxx` loading and LZP1 decoding for the two `c1m3` terrain layers |
 | Voxel-style renderer | ✅ MVP | Perspective terrain, fog, waypoint HUD, and 1080p and 4K render modes |
-| Playable flight | ✅ MVP | Takeoff, steering, altitude control, and three ordered waypoint triggers and mission completion |
+| Playable flight | ✅ MVP | Takeoff, steering, altitude control, and briefing, three ordered waypoint triggers, landing, and debriefing |
 | Mission scripting | 🔍 Under analysis | Rust parser and interpreter driving the training route. 2,124 campaign rules inventoried · [trigger census](docs/mission-triggers.md) |
 | Original flight behavior and AI | ⏳ Planned | Compare behavior against the DOS executable |
-| Platform validation | 🟡 Partial | Interactive demo verified on Linux. Windows validation is pending. |
+| Platform validation | 🟡 Partial | Native Linux and Windows builds in CI. Interactive play verified on Linux. |
 
 ## 🧭 Roadmap
 
@@ -43,6 +43,10 @@ See the [work plan](docs/PLAN.md) for dependencies and acceptance criteria.
 4. Validate Windows builds, rendering performance, and input on both platforms.
 
 ## 🔧 Building and running
+
+Download the [preview release](https://github.com/pedryvo/comanche3-decomp/releases/tag/v0.1.0)
+or build from source. Run the executable from the directory that contains your original
+`RESOURCE.RES`. On Linux the window uses X11 or XWayland.
 
 Install stable Rust and a C toolchain. The Linux window uses X11, including XWayland on a Wayland desktop.
 
@@ -56,12 +60,12 @@ cd /path/to/comanche3
 /path/to/comanche3-decomp/target/release/comanche3-mvp --1080p
 ```
 
-Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **V** to toggle between the chase and first-person cameras, **R** to restart, and **Esc** to quit.
+Press **Enter** at the briefing. Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **V** to toggle between the chase and first-person cameras, **R** to return to the briefing, and **Esc** to quit. After the third point, brake with **S** and lower the helicopter with **Shift** inside the marked area. Press **Enter** on the debriefing to return to the briefing.
 
 - `--1080p` renders at 1920 × 1080. `--4k` renders at 3840 × 2160.
 - `--cockpit` starts in first-person view.
 - `--demo` flies the selected route automatically in the window.
-- `--training <path>` loads a route file. The built-in route has three points, and [`missions/turns.route`](missions/turns.route) adds a four-point course with turns.
+- `--training <path>` loads a route file. The built-in route has three points and a landing, and [`missions/turns.route`](missions/turns.route) adds a four-point course with turns.
 - `--smoke` verifies terrain loading, ordered waypoint completion, reset, and rendering without opening a window. Combine it with either resolution flag.
 
 Run the second mission from a checkout containing the game data:

@@ -97,7 +97,7 @@ fn run() -> Result<(), String> {
         for tick in 0..9000 * total {
             flight.step(
                 &terrain,
-                demo_controls(&flight, tick as f32 / 60.0),
+                demo_controls(&flight, training.is_landing(), tick as f32 / 60.0),
                 1.0 / 60.0,
             );
             training.tick(&mut flight)?;
@@ -131,6 +131,7 @@ fn run() -> Result<(), String> {
                     rotor_angle: tick as f32 * 0.3,
                 }),
             );
+            draw_briefing_panel(&mut frame, size, scale, &training, true);
             std::hint::black_box(&frame);
         }
         let render_elapsed = start.elapsed();
@@ -167,13 +168,20 @@ fn run() -> Result<(), String> {
     window.set_target_fps(60);
     let mut started = Instant::now();
     let mut previous = started;
+    let mut briefing = true;
     let mut rotor_angle = 0.0;
     let mut mouse_anchor = None::<(f32, f32)>;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let now = Instant::now();
-        if window.is_key_pressed(Key::R, KeyRepeat::No) {
+        let enter = window.is_key_pressed(Key::Enter, KeyRepeat::No);
+        if window.is_key_pressed(Key::R, KeyRepeat::No) || (enter && flight.complete) {
             flight = Flight::new(&terrain);
             training = Training::new(&route, &mut flight);
+            briefing = true;
+            started = now;
+        } else if briefing && (enter || (demo && now.duration_since(started).as_secs_f32() >= 2.0))
+        {
+            briefing = false;
             started = now;
         }
         if window.is_key_pressed(Key::V, KeyRepeat::No) {
@@ -181,7 +189,11 @@ fn run() -> Result<(), String> {
         }
         let down = |key| window.is_key_down(key);
         let controls = if demo {
-            demo_controls(&flight, now.duration_since(started).as_secs_f32())
+            demo_controls(
+                &flight,
+                training.is_landing(),
+                now.duration_since(started).as_secs_f32(),
+            )
         } else {
             Controls {
                 accelerate: down(Key::W) || down(Key::Up),
@@ -212,8 +224,10 @@ fn run() -> Result<(), String> {
         } else {
             mouse_anchor = None;
         }
-        flight.step(&terrain, controls, dt);
-        training.tick(&mut flight)?;
+        if !briefing && !flight.complete {
+            flight.step(&terrain, controls, dt);
+            training.tick(&mut flight)?;
+        }
         rotor_angle = (rotor_angle + dt * 24.0).rem_euclid(std::f32::consts::TAU);
         previous = now;
         paint(
@@ -229,6 +243,9 @@ fn run() -> Result<(), String> {
                 rotor_angle,
             }),
         );
+        if briefing || flight.complete {
+            draw_briefing_panel(&mut frame, size, scale, &training, flight.complete);
+        }
         window
             .update_with_buffer(&frame, size.0, size.1)
             .map_err(|error| error.to_string())?;
@@ -269,21 +286,31 @@ fn check_training_guards(
     Ok(())
 }
 
-fn demo_controls(flight: &Flight, elapsed: f32) -> Controls {
+fn demo_controls(flight: &Flight, landing: bool, elapsed: f32) -> Controls {
     if flight.complete {
         return Controls {
             brake: true,
             ..Controls::default()
         };
     }
-    let aim = (flight.waypoint_x - flight.x).atan2(flight.waypoint_z - flight.z);
+    let dx = flight.waypoint_x - flight.x;
+    let dz = flight.waypoint_z - flight.z;
+    if landing && dx.hypot(dz) < 7.0 {
+        return Controls {
+            brake: true,
+            descend: flight.speed < 2.0,
+            ..Controls::default()
+        };
+    }
+    let aim = dx.atan2(dz);
     let error = (aim - flight.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
         - std::f32::consts::PI;
     let aligned = error.abs() < 0.35;
+    let cruise = if landing { 9.0 } else { 24.0 };
     Controls {
-        climb: elapsed < 1.0,
-        accelerate: aligned && flight.speed < 24.0,
-        brake: !aligned || flight.speed > 26.0,
+        climb: elapsed < 1.0 || (landing && !flight.is_airborne()),
+        accelerate: aligned && flight.speed < cruise,
+        brake: !aligned || flight.speed > cruise + 2.0,
         left: error < -0.025,
         right: error > 0.025,
         ..Controls::default()
@@ -304,6 +331,8 @@ fn paint(
     let (visited, total) = training.progress();
     let objective = if flight.complete {
         format!("TREINAMENTO CONCLUIDO  {visited}/{total}")
+    } else if training.is_landing() {
+        format!("POUSO  DIST {:03.0}", distance)
     } else {
         format!("PONTO {}/{total}  DIST {:03.0}", visited + 1, distance)
     };
@@ -324,6 +353,47 @@ fn paint(
             size,
             8 * scale,
             (8 + line * 12) * scale,
+            scale,
+            label,
+        );
+    }
+}
+
+fn draw_briefing_panel(
+    frame: &mut [u32],
+    size @ (width, height): (usize, usize),
+    scale: usize,
+    training: &Training<'_>,
+    complete: bool,
+) {
+    let panel_width = 440 * scale;
+    let left = (width - panel_width) / 2;
+    let top = height / 3;
+    let (visited, total) = training.progress();
+    let detail = if complete {
+        format!("{visited}/{total} OBJETIVOS CONFIRMADOS")
+    } else {
+        format!("{total} OBJETIVOS  |  SIGA O MARCADOR")
+    };
+    let labels = if complete {
+        ["MISSAO CONCLUIDA", &detail, "ENTER: VOLTAR AO BRIEFING"]
+    } else {
+        ["TREINAMENTO DE NAVEGACAO", &detail, "ENTER: INICIAR VOO"]
+    };
+    for y in top..top + 78 * scale {
+        let color = if y < top + 2 * scale {
+            0x8cae73
+        } else {
+            0x152529
+        };
+        frame[y * width + left..y * width + left + panel_width].fill(color);
+    }
+    for (row, label) in labels.into_iter().enumerate() {
+        text(
+            frame,
+            size,
+            left + 14 * scale,
+            top + (13 + row * 19) * scale,
             scale,
             label,
         );

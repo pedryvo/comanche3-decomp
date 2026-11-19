@@ -9,6 +9,27 @@ permissions:
   contents: read
 
 jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Install X11 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libx11-dev libxcursor-dev libxrandr-dev pkg-config
+      - name: Run tests
+        run: cargo +stable test --locked
+      - name: Build release
+        run: cargo +stable build --release --locked
+      - name: Upload Linux executable
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: comanche3-mvp-linux-x86_64
+          path: target/release/comanche3-mvp
+          if-no-files-found: error
   windows:
     name: Windows
     runs-on: windows-latest
@@ -19,3 +40,10 @@ jobs:
         run: cargo +stable test --locked
       - name: Build release
         run: cargo +stable build --release --locked
+      - name: Upload Windows executable
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: comanche3-mvp-windows-x86_64
+          path: target/release/comanche3-mvp.exe
+          if-no-files-found: error

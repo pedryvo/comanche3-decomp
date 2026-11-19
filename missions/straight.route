@@ -19,5 +19,10 @@ reached, 3
 then
 advance, 3
 
+if
+landed, 4
+then
+finish, 4
+
 <
 ; Trigger Data ENDS

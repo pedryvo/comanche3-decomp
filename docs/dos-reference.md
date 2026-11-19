@@ -30,3 +30,11 @@ jogo e direciona a saída de áudio a um dispositivo temporário sem som.
 A abertura do cockpit estabelece uma referência para medir os gatilhos.
 A ordem dos eventos e a precedência das condições precisam de
 experimentos em execução. A matriz está no [censo de gatilhos](mission-triggers.md).
+
+## Relógio no menu de voo
+
+Duas capturas separadas por cinco segundos mostraram o menu de Esc aberto
+com o relógio em 00:00:20 e 00:00:25. O texto do tutorial também mudou entre
+as capturas. Para medir o tempo de um gatilho, abrir esse menu não serve
+para interromper a simulação. A tecla Pause exibiu a mensagem de pausa,
+mas a duração da interrupção ainda não foi isolada.

@@ -65,6 +65,11 @@ impl Flight {
     pub(crate) fn is_airborne(&self) -> bool {
         self.clearance > LANDED_CLEARANCE + 1.0
     }
+
+    pub(crate) fn is_landed(&self) -> bool {
+        // The clamp in step() sets clearance to the exact floor at touchdown.
+        self.clearance <= LANDED_CLEARANCE && self.speed == 0.0
+    }
 }
 
 fn axis(positive: bool, negative: bool) -> f32 {

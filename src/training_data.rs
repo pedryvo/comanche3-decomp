@@ -7,6 +7,7 @@ pub(crate) const WAYPOINT_RADIUS: f32 = 12.0;
 pub(crate) struct TrainingData {
     pub offsets: Vec<(f32, f32)>,
     pub program: Program,
+    pub requires_landing: bool,
 }
 
 pub(crate) fn parse(data: &[u8]) -> Result<TrainingData, String> {
@@ -62,32 +63,42 @@ pub(crate) fn parse(data: &[u8]) -> Result<TrainingData, String> {
     }
 
     let program = Program::parse(data)?;
-    if program.rules.len() != offsets.len() {
+    let requires_landing = program.rules.len() == offsets.len() + 1;
+    if program.rules.len() != offsets.len() && !requires_landing {
         return Err(format!(
-            "expected {} trigger rules, found {}",
+            "expected {} waypoint rules and up to one landing rule, found {} rules",
             offsets.len(),
             program.rules.len()
         ));
     }
     for (index, rule) in program.rules.iter().enumerate() {
         let number = index + 1;
+        let (condition, action) = if index == offsets.len() {
+            ("landed", "finish")
+        } else {
+            ("reached", "advance")
+        };
         if !matches!(&rule.conditions[..], [(Connector::And, instruction)]
-            if matches_instruction(instruction, "reached", number))
+            if matches_instruction(instruction, condition, number))
         {
             return Err(format!(
-                "line {}: rule {number} requires only the condition reached, {number}",
+                "line {}: rule {number} requires only the condition {condition}, {number}",
                 rule.action.line
             ));
         }
-        if !matches_instruction(&rule.action, "advance", number) {
+        if !matches_instruction(&rule.action, action, number) {
             return Err(format!(
-                "line {}: rule {number} requires the action advance, {number}",
+                "line {}: rule {number} requires the action {action}, {number}",
                 rule.action.line
             ));
         }
     }
 
-    Ok(TrainingData { offsets, program })
+    Ok(TrainingData {
+        offsets,
+        program,
+        requires_landing,
+    })
 }
 
 fn matches_instruction(instruction: &Instruction, opcode: &str, point: usize) -> bool {
@@ -104,6 +115,7 @@ mod tests {
         let data = b"; Comment\r\n\r\npoint, -5.5, 40 ; turn left\r\n; Trigger Data BEGINS\r\nif\r\nreached, 1\r\nthen\r\nadvance, 1\r\n<\r\n; Trigger Data ENDS\r\n";
         let route = parse(data).unwrap();
         assert_eq!(route.offsets, [(-5.5, 40.0)]);
+        assert!(!route.requires_landing);
         assert_eq!(route.program.rules[0].action.line, 8);
     }
 
@@ -116,6 +128,20 @@ mod tests {
         ] {
             assert!(parse(source.as_bytes()).unwrap_err().contains(error));
         }
+    }
+
+    #[test]
+    fn accepts_landing_as_the_final_rule_without_an_extra_point() {
+        let route = parse(include_bytes!("../missions/straight.route")).unwrap();
+        assert!(route.requires_landing);
+        assert_eq!(route.offsets.len(), 3);
+        assert_eq!(route.program.rules.len(), 4);
+    }
+
+    #[test]
+    fn rejects_landing_number_that_matches_a_waypoint() {
+        let data = b"point, 0, 40\n; Trigger Data BEGINS\nif\nreached, 1\nthen\nadvance, 1\nif\nlanded, 1\nthen\nfinish, 1\n<\n; Trigger Data ENDS\n";
+        assert!(parse(data).unwrap_err().contains("landed, 2"));
     }
 
     #[test]
