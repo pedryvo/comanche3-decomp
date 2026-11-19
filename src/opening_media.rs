@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::File,
     io::{BufReader, Read, Seek, SeekFrom},
     path::Path,
@@ -28,6 +28,17 @@ pub(crate) fn check(directory: &Path) -> Result<(), String> {
                             .collect::<Vec<_>>()
                             .join("  ")
                     );
+                    if !segment.audio_layouts.is_empty() {
+                        let description = segment
+                            .audio_layouts
+                            .iter()
+                            .map(|(planes, samples)| {
+                                format!("{planes} plane(s) of {samples} samples")
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        println!("  SAMP: {description}");
+                    }
                 }
             }
             None => println!("{name}: empty placeholder"),
@@ -43,6 +54,7 @@ struct Segment {
     width: u32,
     height: u32,
     tags: BTreeMap<[u8; 4], u64>,
+    audio_layouts: BTreeSet<(usize, u32)>,
 }
 
 fn inspect(path: &Path) -> Result<Option<Vec<Segment>>, String> {
@@ -88,16 +100,58 @@ fn inspect(path: &Path) -> Result<Option<Vec<Segment>>, String> {
                 width,
                 height,
                 tags: BTreeMap::new(),
+                audio_layouts: BTreeSet::new(),
             });
         }
         let segment = segments.last_mut().ok_or("missing KDV header")?;
         *segment.tags.entry(tag).or_default() += 1;
+        if matches!(&tag, b"aVDK" | b"sVDK") {
+            let planes = if tag == *b"sVDK" { 2 } else { 1 };
+            let count = read_sample_planes(&mut reader, offset + 8, offset + length, planes)
+                .map_err(|error| format!("audio record at byte {offset}: {error}"))?;
+            segment.audio_layouts.insert((planes, count));
+        }
         offset += length;
         reader
             .seek(SeekFrom::Start(offset))
             .map_err(|error| error.to_string())?;
     }
     Ok(Some(segments))
+}
+
+fn read_sample_planes(
+    reader: &mut (impl Read + Seek),
+    mut position: u64,
+    end: u64,
+    planes: usize,
+) -> Result<u32, String> {
+    let mut sample_count = 0;
+    for plane in 0..planes {
+        if end - position < 16 {
+            return Err("truncated SAMP header".into());
+        }
+        let mut header = [0; 16];
+        reader
+            .read_exact(&mut header)
+            .map_err(|error| error.to_string())?;
+        let count = number(&header[4..8]);
+        if &header[..4] != b"SAMP"
+            || count == 0
+            || u64::from(count) > end - position - 16
+            || (plane > 0 && count != sample_count)
+        {
+            return Err("invalid SAMP plane".into());
+        }
+        sample_count = count;
+        position += 16 + u64::from(count);
+        reader
+            .seek(SeekFrom::Start(position))
+            .map_err(|error| error.to_string())?;
+    }
+    if end - position > 3 {
+        return Err("unexpected data after SAMP planes".into());
+    }
+    Ok(sample_count)
 }
 
 fn number(data: &[u8]) -> u32 {

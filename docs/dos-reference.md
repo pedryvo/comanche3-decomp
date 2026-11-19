@@ -52,3 +52,12 @@ que inclui o próprio cabeçalho do registro. O utilitário verifica
 os limites dos registros até o fim do arquivo. Em `LINTRO.KDV`, o
 terceiro segmento muda para 320 × 180. Os codecs e a
 temporização ainda precisam ser identificados antes da reprodução.
+
+Os registros de áudio contêm planos `SAMP`, cada um com cabeçalho de
+16 bytes e uma contagem little-endian seguida pela mesma quantidade de
+bytes de amostras. `aVDK` usa um plano e `sVDK` usa dois com contagens
+iguais. A continuidade dos valores entre os registros e o silêncio em
+`0x80` indicam PCM planar sem sinal de 8 bits. Os 1.470 ou 1.837 valores
+por plano são compatíveis com cerca de 22.050 Hz se os segmentos
+estiverem a 15 ou 12 quadros por segundo. Frequência e ordem dos canais
+ainda precisam ser comparadas com a reprodução no DOS.
