@@ -1,4 +1,4 @@
-use crate::{flight::Flight, terrain::Terrain};
+use crate::{aircraft::Aircraft, flight::Flight, terrain::Terrain};
 
 const SKY_TOP: u32 = 0x2b5278;
 const SKY_HORIZON: u32 = 0xb8b5aa;
@@ -6,22 +6,74 @@ const MARKER: u32 = 0xc6ff84;
 const MARKER_SHADOW: u32 = 0x142129;
 const DRAW_DISTANCE: f32 = 720.0;
 
+const ORBIT_DISTANCE: f32 = 24.0;
+
+pub(crate) struct Orbit {
+    azimuth: f32,
+    elevation: f32,
+}
+
+impl Default for Orbit {
+    fn default() -> Self {
+        Self {
+            azimuth: -0.2,
+            elevation: 0.16,
+        }
+    }
+}
+
+impl Orbit {
+    pub(crate) fn rotate(&mut self, azimuth: f32, elevation: f32) {
+        self.azimuth = (self.azimuth + azimuth).rem_euclid(std::f32::consts::TAU);
+        self.elevation = (self.elevation + elevation).clamp(0.03, 0.65);
+    }
+}
+
+pub(crate) struct ExternalView<'a> {
+    pub aircraft: &'a Aircraft,
+    pub orbit: &'a Orbit,
+    pub rotor_angle: f32,
+}
+
 /// Draw a perspective heightfield from front to back, filling the visible spans
 /// of each column. Color is packed as 0x00RRGGBB.
-pub fn draw(frame: &mut [u32], width: usize, height: usize, terrain: &Terrain, flight: &Flight) {
+pub fn draw(
+    frame: &mut [u32],
+    (width, height): (usize, usize),
+    terrain: &Terrain,
+    flight: &Flight,
+    chase: Option<ExternalView<'_>>,
+) {
     if width < 32 || height < 32 {
         frame.fill(SKY_TOP);
         return;
     }
 
-    let horizon = height as f32 * 0.43;
     let focal = height as f32 * 0.93;
+    let (azimuth, elevation) = chase.as_ref().map_or((0.0, 0.0), |view| {
+        (view.orbit.azimuth, view.orbit.elevation)
+    });
+    let (sin, cos) = (flight.yaw + azimuth).sin_cos();
+    let rear_offset = if chase.is_some() { ORBIT_DISTANCE } else { 0.0 };
+    let camera_x = flight.x - rear_offset * sin;
+    let camera_z = flight.z - rear_offset * cos;
+    let camera_altitude = if chase.is_some() {
+        (flight.altitude + 1.25 + ORBIT_DISTANCE * elevation.tan())
+            .max(terrain.sample(camera_x, camera_z).0 + 2.5)
+    } else {
+        flight.altitude
+    };
+    // Shift the projection so the aircraft stays centered as elevation changes.
+    let horizon = if chase.is_some() {
+        height as f32 * 0.52 - focal * (camera_altitude - flight.altitude - 1.25) / rear_offset
+    } else {
+        height as f32 * 0.43
+    };
     for (y, row) in frame.chunks_exact_mut(width).enumerate() {
-        let haze = (y as f32 / horizon).clamp(0.0, 1.0);
+        let haze = (y as f32 / horizon.max(1.0)).clamp(0.0, 1.0);
         row.fill(blend(SKY_TOP, SKY_HORIZON, haze));
     }
 
-    let (sin, cos) = flight.yaw.sin_cos();
     for x in 0..width {
         let side = (x as f32 + 0.5 - width as f32 * 0.5) / focal;
         let ray_x = sin + side * cos;
@@ -29,11 +81,11 @@ pub fn draw(frame: &mut [u32], width: usize, height: usize, terrain: &Terrain, f
         let mut span_bottom = height;
         let mut depth: f32 = 1.0;
         while depth < DRAW_DISTANCE && span_bottom > 0 {
-            let world_x = flight.x + depth * ray_x;
-            let world_z = flight.z + depth * ray_z;
+            let world_x = camera_x + depth * ray_x;
+            let world_z = camera_z + depth * ray_z;
             let (elevation, color) = terrain.sample(world_x, world_z);
             let top =
-                project_y(horizon, focal, flight.altitude - elevation, depth).max(0.0) as usize;
+                project_y(horizon, focal, camera_altitude - elevation, depth).max(0.0) as usize;
             if top < span_bottom {
                 let haze = ((depth - 80.0) / (DRAW_DISTANCE - 80.0)).clamp(0.0, 1.0);
                 let color = blend(color, SKY_HORIZON, haze * haze);
@@ -47,9 +99,20 @@ pub fn draw(frame: &mut [u32], width: usize, height: usize, terrain: &Terrain, f
         }
     }
 
+    if let Some(view) = chase {
+        view.aircraft.draw(
+            frame,
+            (width, height),
+            horizon,
+            focal,
+            [azimuth, camera_altitude - flight.altitude, rear_offset],
+            view.rotor_angle,
+        );
+    }
+
     if !flight.complete {
-        let dx = flight.waypoint_x - flight.x;
-        let dz = flight.waypoint_z - flight.z;
+        let dx = flight.waypoint_x - camera_x;
+        let dz = flight.waypoint_z - camera_z;
         let depth = dx * sin + dz * cos;
         let side = dx * cos - dz * sin;
         let elevation = terrain.sample(flight.waypoint_x, flight.waypoint_z).0 + 6.0;
@@ -62,9 +125,9 @@ pub fn draw(frame: &mut [u32], width: usize, height: usize, terrain: &Terrain, f
         let (x, y) = if depth < 1.0 || projected_x < margin || projected_x > right_edge {
             // Keep the waypoint bearing visible while the target is outside the view.
             let x = if side < 0.0 { margin } else { right_edge };
-            (x, horizon)
+            (x, horizon.clamp(margin, bottom_edge))
         } else {
-            let y = project_y(horizon, focal, flight.altitude - elevation, depth);
+            let y = project_y(horizon, focal, camera_altitude - elevation, depth);
             (projected_x, y.clamp(margin, bottom_edge))
         };
         draw_marker(frame, width, height, x as isize, y as isize, size);

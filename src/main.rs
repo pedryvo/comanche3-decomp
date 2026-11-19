@@ -1,10 +1,16 @@
+mod aircraft;
 mod flight;
+mod mission;
+mod mission_cli;
 mod render;
 mod terrain;
+mod trigger_runtime;
 
+use aircraft::Aircraft;
 use flight::{Controls, Flight};
 use font8x8::{BASIC_FONTS, UnicodeFonts};
-use minifb::{Key, KeyRepeat, ScaleMode, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
+use render::{ExternalView, Orbit};
 use std::path::Path;
 use std::time::Instant;
 use terrain::Terrain;
@@ -20,21 +26,36 @@ fn run() -> Result<(), String> {
     let mut size = (1280, 720);
     let mut smoke = false;
     let mut demo = false;
-    for argument in std::env::args().skip(1) {
+    let mut chase = true;
+    let resources = Path::new("RESOURCE.RES");
+    let mut arguments = std::env::args().skip(1);
+    while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--1080p" => size = (1920, 1080),
             "--4k" => size = (3840, 2160),
             "--smoke" => smoke = true,
             "--demo" => demo = true,
+            "--cockpit" => chase = false,
+            "--check-missions" if arguments.len() == 0 => return mission_cli::audit(resources),
+            "--trace-mission" => {
+                let name = arguments
+                    .next()
+                    .ok_or("Expected a .mis filename after --trace-mission")?;
+                return mission_cli::trace(resources, &name, &arguments.collect::<Vec<_>>());
+            }
             "--help" => {
-                println!("comanche3-mvp [--1080p | --4k] [--demo | --smoke]");
+                println!("comanche3-mvp [--1080p | --4k] [--demo | --smoke] [--cockpit]");
+                println!("comanche3-mvp --check-missions");
+                println!("comanche3-mvp --trace-mission <file.mis> ['condition, arg' ...]");
                 return Ok(());
             }
             _ => return Err(format!("Opcao desconhecida: {argument}")),
         }
     }
 
-    let terrain = Terrain::load(Path::new("RESOURCE.RES"))?;
+    let terrain = Terrain::load(resources)?;
+    let aircraft = Aircraft::load(resources)?;
+    let mut orbit = Orbit::default();
     let mut flight = Flight::new(&terrain);
     let mut frame = vec![0; size.0 * size.1];
     let scale = (size.0 / 640).max(1);
@@ -47,8 +68,20 @@ fn run() -> Result<(), String> {
         if !flight.complete {
             return Err("O voo de teste nao atingiu o waypoint".into());
         }
-        for _ in 0..10 {
-            paint(&mut frame, size, scale, &terrain, &flight);
+        for tick in 0..10 {
+            orbit.rotate(std::f32::consts::TAU / 10.0, 0.05);
+            paint(
+                &mut frame,
+                size,
+                scale,
+                &terrain,
+                &flight,
+                chase.then_some(ExternalView {
+                    aircraft: &aircraft,
+                    orbit: &orbit,
+                    rotor_angle: tick as f32 * 0.3,
+                }),
+            );
             std::hint::black_box(&frame);
         }
         let distinct = frame.iter().any(|pixel| *pixel != frame[0]);
@@ -78,11 +111,16 @@ fn run() -> Result<(), String> {
     window.set_target_fps(60);
     let mut started = Instant::now();
     let mut previous = started;
+    let mut rotor_angle = 0.0;
+    let mut mouse_anchor = None::<(f32, f32)>;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let now = Instant::now();
         if window.is_key_pressed(Key::R, KeyRepeat::No) {
             flight = Flight::new(&terrain);
             started = now;
+        }
+        if window.is_key_pressed(Key::V, KeyRepeat::No) {
+            chase = !chase;
         }
         let down = |key| window.is_key_down(key);
         let controls = if demo {
@@ -97,13 +135,41 @@ fn run() -> Result<(), String> {
                 descend: down(Key::LeftShift) || down(Key::RightShift),
             }
         };
-        flight.step(
-            &terrain,
-            controls,
-            now.duration_since(previous).as_secs_f32(),
-        );
+        let dt = now.duration_since(previous).as_secs_f32();
+        if chase {
+            let axis =
+                |positive, negative| (i8::from(down(positive)) - i8::from(down(negative))) as f32;
+            orbit.rotate(
+                axis(Key::L, Key::J) * dt.min(0.1) * 2.0,
+                axis(Key::I, Key::K) * dt.min(0.1),
+            );
+            let cursor = if window.get_mouse_down(MouseButton::Right) {
+                window.get_mouse_pos(MouseMode::Discard)
+            } else {
+                None
+            };
+            if let (Some((old_x, old_y)), Some((x, y))) = (mouse_anchor, cursor) {
+                orbit.rotate((old_x - x) * 0.008, (y - old_y) * 0.006);
+            }
+            mouse_anchor = cursor;
+        } else {
+            mouse_anchor = None;
+        }
+        flight.step(&terrain, controls, dt);
+        rotor_angle = (rotor_angle + dt * 24.0).rem_euclid(std::f32::consts::TAU);
         previous = now;
-        paint(&mut frame, size, scale, &terrain, &flight);
+        paint(
+            &mut frame,
+            size,
+            scale,
+            &terrain,
+            &flight,
+            chase.then_some(ExternalView {
+                aircraft: &aircraft,
+                orbit: &orbit,
+                rotor_angle,
+            }),
+        );
         window
             .update_with_buffer(&frame, size.0, size.1)
             .map_err(|error| error.to_string())?;
@@ -126,8 +192,9 @@ fn paint(
     scale: usize,
     terrain: &Terrain,
     flight: &Flight,
+    chase: Option<ExternalView<'_>>,
 ) {
-    render::draw(frame, size.0, size.1, terrain, flight);
+    render::draw(frame, size, terrain, flight, chase);
     let distance = (flight.x - flight.waypoint_x).hypot(flight.z - flight.waypoint_z);
     let objective = if flight.complete {
         "WAYPOINT ATINGIDO".to_owned()
@@ -135,10 +202,15 @@ fn paint(
         format!("WAYPOINT {:03.0}", distance)
     };
     let telemetry = format!("ALT {:03.0}  VEL {:02.0}", flight.altitude, flight.speed);
-    let controls = "ESPACO SUBIR | SHIFT DESCER | WASD VOAR | R REINICIAR";
-    for (line, label) in [objective.as_str(), &telemetry, controls]
-        .into_iter()
-        .enumerate()
+    let controls = "ESPACO SUBIR | SHIFT DESCER | WASD VOAR | V CAMERA | R REINICIAR";
+    for (line, label) in [
+        objective.as_str(),
+        &telemetry,
+        controls,
+        "IJKL OU BOTAO DIREITO: GIRAR CAMERA",
+    ]
+    .into_iter()
+    .enumerate()
     {
         text(
             frame,

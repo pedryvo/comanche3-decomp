@@ -17,7 +17,7 @@ _Fly over terrain from the original DOS game in a resizable window with 1080p an
 
 ## 🚁 About
 
-**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through a waypoint. It uses simplified flight controls and a waypoint objective written for the prototype.
+**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through a waypoint. The default chase camera shows the original high-detail desert Comanche exterior assembled from the `PLAYER.AI` model parts, with its textures and animated rotors. It uses simplified flight controls and a waypoint objective written for the prototype.
 
 > [!IMPORTANT]
 > You need your own copy of the DOS edition’s `RESOURCE.RES`. The repository contains the engine source, tools, and research notes. Original game data stays in your local installation.
@@ -29,7 +29,7 @@ _Fly over terrain from the original DOS game in a resizable window with 1080p an
 | Resource archive and terrain | ✅ MVP | Direct `RESOURCE2xxx` loading and LZP1 decoding for the two `c1m3` terrain layers |
 | Voxel-style renderer | ✅ MVP | Perspective terrain, fog, waypoint HUD, and 1080p and 4K render modes |
 | Playable flight | ✅ MVP | Takeoff, steering, altitude control, and a waypoint completion trigger |
-| Mission scripting | 🔍 Under analysis | 2,124 rules across 41 campaign-named files · [trigger census](docs/mission-triggers.md) |
+| Mission scripting | 🔍 Under analysis | Rust parser and headless interpreter. 2,124 campaign rules inventoried · [trigger census](docs/mission-triggers.md) |
 | Original flight behavior and AI | ⏳ Planned | Compare behavior against the DOS executable |
 | Platform validation | 🟡 Partial | Interactive demo verified on Linux. Windows validation is pending. |
 
@@ -54,11 +54,14 @@ cd /path/to/comanche3
 /path/to/comanche3-decomp/target/release/comanche3-mvp --1080p
 ```
 
-Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **R** to restart, and **Esc** to quit.
+Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **V** to toggle between the chase and first-person cameras, **R** to restart, and **Esc** to quit.
 
 - `--1080p` renders at 1920 × 1080. `--4k` renders at 3840 × 2160.
+- `--cockpit` starts in first-person view.
 - `--demo` flies the waypoint route automatically in the window.
 - `--smoke` verifies terrain loading, waypoint completion, and rendering without opening a window. Combine it with either resolution flag.
+
+In the chase view, drag with the **right mouse button** to orbit the helicopter. **J/L** orbit left and right, and **I/K** raise and lower the view.
 
 ## 🧰 Repository layout
 
@@ -66,8 +69,10 @@ Hold **Space + W** to take off toward the first waypoint. Use **W/S** to acceler
 |---|---|
 | [`src/terrain.rs`](src/terrain.rs) | Archive reader, LZP1 decoder, and terrain sampling |
 | [`src/render.rs`](src/render.rs) | CPU heightfield renderer and waypoint marker |
+| [`src/aircraft.rs`](src/aircraft.rs) | Original 3DO exterior mesh, PCX textures, and rotor rendering |
 | [`src/flight.rs`](src/flight.rs) | Prototype flight controls and waypoint logic |
 | [`src/main.rs`](src/main.rs) | Window, keyboard input, HUD, and smoke test |
+| [`src/mission.rs`](src/mission.rs), [`src/trigger_runtime.rs`](src/trigger_runtime.rs) | Mission trigger parser and headless rule evaluator |
 | [`tools/trigger_census.py`](tools/trigger_census.py) | Inventory of conditions, operators, and actions in extracted mission files |
 | [`docs/mission-triggers.md`](docs/mission-triggers.md) | Reproducible census and open questions, in Brazilian Portuguese |
 
