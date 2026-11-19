@@ -18,7 +18,7 @@ jobs:
       - name: Install X11 build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libx11-dev libxcursor-dev libxrandr-dev pkg-config
+          sudo apt-get install --no-install-recommends -y libx11-dev libxcursor-dev libxrandr-dev libasound2-dev pkg-config
       - name: Run tests
         run: cargo +stable test --locked
       - name: Build release

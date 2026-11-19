@@ -38,3 +38,17 @@ com o relógio em 00:00:20 e 00:00:25. O texto do tutorial também mudou entre
 as capturas. Para medir o tempo de um gatilho, abrir esse menu não serve
 para interromper a simulação. A tecla Pause exibiu a mensagem de pausa,
 mas a duração da interrupção ainda não foi isolada.
+
+## Áudio e vídeo da instalação
+
+`--check-audio` decodifica `INSIDE.WAV` e `ALERT.WAV` diretamente do
+`RESOURCE.RES`. O primeiro reproduz o som contínuo do motor na missão
+de treinamento. O segundo sinaliza a confirmação de um objetivo.
+
+`--check-videos` inspeciona os arquivos KDV locais. `HINTRO.KDV`,
+`LINTRO.KDV` e `LOVRVIEW.KDV` começam em 320 × 240, com
+registros com identificador de quatro bytes e tamanho little-endian
+que inclui o próprio cabeçalho do registro. O utilitário verifica
+os limites dos registros até o fim do arquivo. Em `LINTRO.KDV`, o
+terceiro segmento muda para 320 × 180. Os codecs e a
+temporização ainda precisam ser identificados antes da reprodução.

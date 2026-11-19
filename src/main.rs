@@ -1,7 +1,9 @@
 mod aircraft;
+mod audio;
 mod flight;
 mod mission;
 mod mission_cli;
+mod opening_media;
 mod render;
 mod terrain;
 mod training;
@@ -29,6 +31,7 @@ fn run() -> Result<(), String> {
     let mut size = (1280, 720);
     let mut smoke = false;
     let mut demo = false;
+    let mut muted = false;
     let mut training_path = None;
     let mut chase = true;
     let resources = Path::new("RESOURCE.RES");
@@ -39,6 +42,11 @@ fn run() -> Result<(), String> {
             "--4k" => size = (3840, 2160),
             "--smoke" => smoke = true,
             "--demo" => demo = true,
+            "--mute" => muted = true,
+            "--check-audio" if arguments.len() == 0 => return audio::check(resources),
+            "--check-videos" if arguments.len() == 0 => {
+                return opening_media::check(Path::new("."));
+            }
             "--training" => {
                 training_path = Some(
                     arguments
@@ -56,9 +64,9 @@ fn run() -> Result<(), String> {
             }
             "--help" => {
                 println!(
-                    "comanche3-mvp [--1080p | --4k] [--demo | --smoke] [--cockpit] [--training <arquivo>]"
+                    "comanche3-mvp [--1080p | --4k] [--demo | --smoke] [--cockpit] [--mute] [--training <arquivo>]"
                 );
-                println!("comanche3-mvp --check-missions");
+                println!("comanche3-mvp --check-missions | --check-audio | --check-videos");
                 println!("comanche3-mvp --trace-mission <file.mis> ['condition, arg' ...]");
                 return Ok(());
             }
@@ -131,7 +139,7 @@ fn run() -> Result<(), String> {
                     rotor_angle: tick as f32 * 0.3,
                 }),
             );
-            draw_briefing_panel(&mut frame, size, scale, &training, true);
+            draw_mission_panel(&mut frame, size, scale, &training, Panel::Debriefing);
             std::hint::black_box(&frame);
         }
         let render_elapsed = start.elapsed();
@@ -166,26 +174,47 @@ fn run() -> Result<(), String> {
     );
     let mut window = monitor.map_err(|error| format!("Erro ao abrir a janela: {error}"))?;
     window.set_target_fps(60);
+    let mut sound = if muted {
+        None
+    } else {
+        audio::MissionAudio::load(resources)
+            .map_err(|error| eprintln!("Audio indisponivel: {error}"))
+            .ok()
+    };
     let mut started = Instant::now();
     let mut previous = started;
     let mut briefing = true;
+    let mut title = !demo;
     let mut rotor_angle = 0.0;
     let mut mouse_anchor = None::<(f32, f32)>;
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let now = Instant::now();
         let enter = window.is_key_pressed(Key::Enter, KeyRepeat::No);
-        if window.is_key_pressed(Key::R, KeyRepeat::No) || (enter && flight.complete) {
+        if title && enter {
+            title = false;
+        } else if !title
+            && (window.is_key_pressed(Key::R, KeyRepeat::No) || (enter && flight.complete))
+        {
             flight = Flight::new(&terrain);
             training = Training::new(&route, &mut flight);
             briefing = true;
+            if let Some(sound) = &mut sound {
+                sound.stop();
+            }
             started = now;
         } else if briefing && (enter || (demo && now.duration_since(started).as_secs_f32() >= 2.0))
         {
             briefing = false;
+            if let Some(sound) = &mut sound {
+                sound.start(chase);
+            }
             started = now;
         }
         if window.is_key_pressed(Key::V, KeyRepeat::No) {
             chase = !chase;
+            if let Some(sound) = &mut sound {
+                sound.set_camera(chase);
+            }
         }
         let down = |key| window.is_key_down(key);
         let controls = if demo {
@@ -225,8 +254,17 @@ fn run() -> Result<(), String> {
             mouse_anchor = None;
         }
         if !briefing && !flight.complete {
+            let old_progress = training.progress();
             flight.step(&terrain, controls, dt);
             training.tick(&mut flight)?;
+            if let Some(sound) = &mut sound {
+                if training.progress() != old_progress {
+                    sound.waypoint();
+                }
+                if flight.complete {
+                    sound.stop();
+                }
+            }
         }
         rotor_angle = (rotor_angle + dt * 24.0).rem_euclid(std::f32::consts::TAU);
         previous = now;
@@ -243,8 +281,12 @@ fn run() -> Result<(), String> {
                 rotor_angle,
             }),
         );
-        if briefing || flight.complete {
-            draw_briefing_panel(&mut frame, size, scale, &training, flight.complete);
+        if title {
+            draw_mission_panel(&mut frame, size, scale, &training, Panel::Title);
+        } else if flight.complete {
+            draw_mission_panel(&mut frame, size, scale, &training, Panel::Debriefing);
+        } else if briefing {
+            draw_mission_panel(&mut frame, size, scale, &training, Panel::Briefing);
         }
         window
             .update_with_buffer(&frame, size.0, size.1)
@@ -326,7 +368,11 @@ fn paint(
     training: &Training<'_>,
     chase: Option<ExternalView<'_>>,
 ) {
+    let first_person = chase.is_none();
     render::draw(frame, size, terrain, flight, chase);
+    if first_person {
+        draw_flight_reference(frame, size, scale);
+    }
     let distance = (flight.x - flight.waypoint_x).hypot(flight.z - flight.waypoint_z);
     let (visited, total) = training.progress();
     let objective = if flight.complete {
@@ -336,7 +382,18 @@ fn paint(
     } else {
         format!("PONTO {}/{total}  DIST {:03.0}", visited + 1, distance)
     };
-    let telemetry = format!("ALT {:03.0}  VEL {:02.0}", flight.altitude, flight.speed);
+    let heading = flight.yaw.to_degrees().round() as u16 % 360;
+    let telemetry = if first_person {
+        format!(
+            "PROA {heading:03}  ALT {:03.0}  VEL {:02.0}",
+            flight.altitude, flight.speed
+        )
+    } else {
+        format!(
+            "CAMERA EXTERNA  ALT {:03.0}  VEL {:02.0}",
+            flight.altitude, flight.speed
+        )
+    };
     let controls = "ESPACO SUBIR | SHIFT DESCER | WASD VOAR | V CAMERA | R REINICIAR";
     for (line, label) in [
         objective.as_str(),
@@ -359,26 +416,49 @@ fn paint(
     }
 }
 
-fn draw_briefing_panel(
+fn draw_flight_reference(frame: &mut [u32], (width, height): (usize, usize), scale: usize) {
+    let center = width / 2;
+    let horizon = (height as f32 * render::FIRST_PERSON_HORIZON) as usize;
+    let ink = 0xe7_ffe5;
+    for y in horizon..horizon + scale {
+        let row = &mut frame[y * width..(y + 1) * width];
+        row[center - 18 * scale..center - 4 * scale].fill(ink);
+        row[center + 4 * scale..center + 18 * scale].fill(ink);
+    }
+}
+
+enum Panel {
+    Title,
+    Briefing,
+    Debriefing,
+}
+
+fn draw_mission_panel(
     frame: &mut [u32],
     size @ (width, height): (usize, usize),
     scale: usize,
     training: &Training<'_>,
-    complete: bool,
+    panel: Panel,
 ) {
     let panel_width = 440 * scale;
     let left = (width - panel_width) / 2;
     let top = height / 3;
     let (visited, total) = training.progress();
-    let detail = if complete {
-        format!("{visited}/{total} OBJETIVOS CONFIRMADOS")
-    } else {
-        format!("{total} OBJETIVOS  |  SIGA O MARCADOR")
-    };
-    let labels = if complete {
-        ["MISSAO CONCLUIDA", &detail, "ENTER: VOLTAR AO BRIEFING"]
-    } else {
-        ["TREINAMENTO DE NAVEGACAO", &detail, "ENTER: INICIAR VOO"]
+    let summary;
+    let labels = match panel {
+        Panel::Title => [
+            "COMANCHE 3",
+            "PREVIA DE TREINAMENTO",
+            "ENTER: ABRIR BRIEFING",
+        ],
+        Panel::Briefing => {
+            summary = format!("{total} OBJETIVOS  |  SIGA O MARCADOR");
+            ["TREINAMENTO DE NAVEGACAO", &summary, "ENTER: INICIAR VOO"]
+        }
+        Panel::Debriefing => {
+            summary = format!("{visited}/{total} OBJETIVOS CONFIRMADOS");
+            ["MISSAO CONCLUIDA", &summary, "ENTER: VOLTAR AO BRIEFING"]
+        }
     };
     for y in top..top + 78 * scale {
         let color = if y < top + 2 * scale {

@@ -6,4 +6,5 @@ license = "GPL-3.0-only"
 
 [dependencies]
 font8x8 = "0.3"
+kira = { version = "0.12.5", default-features = false, features = ["cpal", "wav", "pcm"] }
 minifb = { version = "0.28", default-features = false, features = ["x11"] }

@@ -48,7 +48,7 @@ Download the [preview release](https://github.com/pedryvo/comanche3-decomp/relea
 or build from source. Run the executable from the directory that contains your original
 `RESOURCE.RES`. On Linux the window uses X11 or XWayland.
 
-Install stable Rust and a C toolchain. The Linux window uses X11, including XWayland on a Wayland desktop.
+Install stable Rust and a C toolchain. On Linux, building the audio backend requires ALSA development headers. The Linux window uses X11, including XWayland on a Wayland desktop.
 
 ```sh
 git clone https://github.com/pedryvo/comanche3-decomp.git
@@ -60,10 +60,12 @@ cd /path/to/comanche3
 /path/to/comanche3-decomp/target/release/comanche3-mvp --1080p
 ```
 
-Press **Enter** at the briefing. Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **V** to toggle between the chase and first-person cameras, **R** to return to the briefing, and **Esc** to quit. After the third point, brake with **S** and lower the helicopter with **Shift** inside the marked area. Press **Enter** on the debriefing to return to the briefing.
+In the current source build, press **Enter** at the title screen and again at the briefing. Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **V** to toggle between the chase and first-person cameras, **R** to return to the briefing, and **Esc** to quit. After the third point, brake with **S** and lower the helicopter with **Shift** inside the marked area. Press **Enter** on the debriefing to return to the briefing.
 
 - `--1080p` renders at 1920 × 1080. `--4k` renders at 3840 × 2160.
-- `--cockpit` starts in first-person view.
+- `--cockpit` starts in first-person view with a horizon reference and heading.
+- `--mute` disables audio. `--check-audio` checks that the engine and marker clips decode directly from `RESOURCE.RES`.
+- `--check-videos` lists dimensions and record counts in local KDV files. KDV playback is still pending.
 - `--demo` flies the selected route automatically in the window.
 - `--training <path>` loads a route file. The built-in route has three points and a landing, and [`missions/turns.route`](missions/turns.route) adds a four-point course with turns.
 - `--smoke` verifies terrain loading, ordered waypoint completion, reset, and rendering without opening a window. Combine it with either resolution flag.

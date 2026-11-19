@@ -5,6 +5,7 @@ const SKY_HORIZON: u32 = 0xb8b5aa;
 const MARKER: u32 = 0xc6ff84;
 const MARKER_SHADOW: u32 = 0x142129;
 const DRAW_DISTANCE: f32 = 720.0;
+pub(crate) const FIRST_PERSON_HORIZON: f32 = 0.43;
 
 const ORBIT_DISTANCE: f32 = 24.0;
 
@@ -67,7 +68,7 @@ pub fn draw(
     let horizon = if chase.is_some() {
         height as f32 * 0.52 - focal * (camera_altitude - flight.altitude - 1.25) / rear_offset
     } else {
-        height as f32 * 0.43
+        height as f32 * FIRST_PERSON_HORIZON
     };
     for (y, row) in frame.chunks_exact_mut(width).enumerate() {
         let haze = (y as f32 / horizon.max(1.0)).clamp(0.0, 1.0);
