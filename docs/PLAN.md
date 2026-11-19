@@ -25,6 +25,25 @@ Usar a matriz existente como amostra para comparar a interpretação dos dados c
 
 ## Fase 3 — Expansão do protótipo
 
-A partir do percurso jogável e das verificações de compatibilidade, ampliar o conjunto de condições e ações de uso geral e criar novas missões de treinamento. Validar a execução em Windows, testar teclado e câmera em ambas as plataformas e medir o desempenho em 1080p e 4K.
+O executável já carrega dois percursos de treinamento com o mesmo interpretador. A próxima etapa amplia o conjunto de condições e ações de uso geral conforme avançam as verificações de compatibilidade. Validar a execução em Windows, testar teclado e câmera em ambas as plataformas e medir o desempenho em 1080p e 4K.
 
 **Critério de conclusão.** Executar os mesmos testes de percurso e reinício em Linux e Windows, registrar resultados por resolução e demonstrar que uma nova missão pode reutilizar o interpretador e o estado de voo.
+
+### Percursos carregados de arquivo
+
+Os exemplos ficam em [`missions/`](../missions/). O formato UTF-8 começa
+com uma linha `point, dx, dz` por ponto. Os deslocamentos são relativos à
+posição de decolagem. Cada ponto precisa ficar dentro do mapa, a mais de
+12 unidades do início e a mais de 24 unidades dos demais pontos. O
+bloco de gatilhos tem uma regra `reached`/`advance` para cada ponto,
+numerada a partir de 1 e na ordem do percurso.
+
+```sh
+cargo run --release -- --smoke --1080p
+cargo run --release -- --smoke --4k --training missions/turns.route
+```
+
+As duas execuções foram concluídas no Linux, com três e quatro pontos
+respectivamente. O teste automatizado usa o mesmo piloto de demonstração
+para ambos os percursos. A validação no Windows e a comparação com o DOS
+seguem pendentes.

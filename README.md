@@ -60,8 +60,15 @@ Hold **Space + W** to take off toward the first waypoint. Use **W/S** to acceler
 
 - `--1080p` renders at 1920 × 1080. `--4k` renders at 3840 × 2160.
 - `--cockpit` starts in first-person view.
-- `--demo` flies the waypoint route automatically in the window.
+- `--demo` flies the selected route automatically in the window.
+- `--training <path>` loads a route file. The built-in route has three points, and [`missions/turns.route`](missions/turns.route) adds a four-point course with turns.
 - `--smoke` verifies terrain loading, ordered waypoint completion, reset, and rendering without opening a window. Combine it with either resolution flag.
+
+Run the second mission from a checkout containing the game data:
+
+```sh
+cargo run --release -- --demo --training missions/turns.route
+```
 
 In the chase view, drag with the **right mouse button** to orbit the helicopter. **J/L** orbit left and right, and **I/K** raise and lower the view.
 
@@ -75,7 +82,8 @@ In the chase view, drag with the **right mouse button** to orbit the helicopter.
 | [`src/flight.rs`](src/flight.rs) | Prototype flight controls and airborne state |
 | [`src/main.rs`](src/main.rs) | Window, keyboard input, HUD, and smoke test |
 | [`src/mission.rs`](src/mission.rs), [`src/trigger_runtime.rs`](src/trigger_runtime.rs) | Mission trigger parser and headless rule evaluator |
-| [`src/training.rs`](src/training.rs) | First training mission and its connection to flight state |
+| [`src/training.rs`](src/training.rs), [`src/training_data.rs`](src/training_data.rs) | Training route loading and connection to flight state |
+| [`missions/`](missions/) | Authored example routes |
 | [`tools/trigger_census.py`](tools/trigger_census.py) | Inventory of conditions, operators, and actions in extracted mission files |
 | [`docs/mission-triggers.md`](docs/mission-triggers.md) | Reproducible census and open questions, in Brazilian Portuguese |
 

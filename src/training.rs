@@ -1,52 +1,27 @@
 use crate::{
     flight::Flight,
-    mission::{Instruction, Program},
+    mission::Instruction,
+    training_data::{TrainingData, WAYPOINT_RADIUS},
     trigger_runtime::{TriggerHost, TriggerRuntime},
 };
 
-const WAYPOINT_RADIUS: f32 = 12.0;
-const WAYPOINT_OFFSETS: [f32; 3] = [45.0, 90.0, 135.0];
-const BRIEFINGS: [&str; 4] = [
-    "DECOLE E PASSE PELO PRIMEIRO MARCADOR",
-    "SIGA EM FRENTE ATE O SEGUNDO MARCADOR",
-    "PASSE PELO ULTIMO MARCADOR",
-    "TREINAMENTO CONCLUIDO",
-];
-
-const ROUTE: &[u8] = b"; Trigger Data BEGINS
-if
-reached, 1
-then
-advance, 1
-if
-reached, 2
-then
-advance, 2
-if
-reached, 3
-then
-advance, 3
-<
-; Trigger Data ENDS
-";
-
 pub(crate) struct Training<'program> {
     runtime: TriggerRuntime<'program>,
-    waypoints: [(f32, f32); WAYPOINT_OFFSETS.len()],
+    waypoints: Vec<(f32, f32)>,
     visited: usize,
 }
 
 impl<'program> Training<'program> {
-    pub(crate) fn program() -> Result<Program, String> {
-        Program::parse(ROUTE)
-    }
-
-    pub(crate) fn new(program: &'program Program, flight: &mut Flight) -> Self {
-        let waypoints = WAYPOINT_OFFSETS.map(|offset| (flight.x, flight.z + offset));
+    pub(crate) fn new(data: &'program TrainingData, flight: &mut Flight) -> Self {
+        let waypoints: Vec<_> = data
+            .offsets
+            .iter()
+            .map(|&(x, z)| (flight.x + x, flight.z + z))
+            .collect();
         (flight.waypoint_x, flight.waypoint_z) = waypoints[0];
         flight.complete = false;
         Self {
-            runtime: TriggerRuntime::new(program),
+            runtime: TriggerRuntime::new(&data.program),
             waypoints,
             visited: 0,
         }
@@ -62,7 +37,12 @@ impl<'program> Training<'program> {
     }
 
     pub(crate) fn message(&self) -> &str {
-        BRIEFINGS[self.visited]
+        match self.visited {
+            0 => "DECOLE E PASSE PELO PRIMEIRO MARCADOR",
+            visited if visited == self.waypoints.len() => "TREINAMENTO CONCLUIDO",
+            visited if visited + 1 == self.waypoints.len() => "PASSE PELO ULTIMO MARCADOR",
+            _ => "SIGA ATE O PROXIMO MARCADOR",
+        }
     }
 
     pub(crate) fn progress(&self) -> (usize, usize) {

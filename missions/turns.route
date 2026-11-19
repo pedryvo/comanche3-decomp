@@ -1,0 +1,29 @@
+; Navigation training. Offsets are relative to the starting position.
+point, 0, 45
+point, 55, 90
+point, 0, 145
+point, -55, 195
+
+; Trigger Data BEGINS
+if
+reached, 1
+then
+advance, 1
+
+if
+reached, 2
+then
+advance, 2
+
+if
+reached, 3
+then
+advance, 3
+
+if
+reached, 4
+then
+advance, 4
+
+<
+; Trigger Data ENDS

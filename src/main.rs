@@ -5,6 +5,7 @@ mod mission_cli;
 mod render;
 mod terrain;
 mod training;
+mod training_data;
 mod trigger_runtime;
 
 use aircraft::Aircraft;
@@ -12,8 +13,8 @@ use flight::{Controls, Flight};
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
 use render::{ExternalView, Orbit};
-use std::path::Path;
 use std::time::Instant;
+use std::{borrow::Cow, path::Path};
 use terrain::Terrain;
 use training::Training;
 
@@ -28,6 +29,7 @@ fn run() -> Result<(), String> {
     let mut size = (1280, 720);
     let mut smoke = false;
     let mut demo = false;
+    let mut training_path = None;
     let mut chase = true;
     let resources = Path::new("RESOURCE.RES");
     let mut arguments = std::env::args().skip(1);
@@ -37,6 +39,13 @@ fn run() -> Result<(), String> {
             "--4k" => size = (3840, 2160),
             "--smoke" => smoke = true,
             "--demo" => demo = true,
+            "--training" => {
+                training_path = Some(
+                    arguments
+                        .next()
+                        .ok_or("Informe o arquivo apos --training")?,
+                );
+            }
             "--cockpit" => chase = false,
             "--check-missions" if arguments.len() == 0 => return mission_cli::audit(resources),
             "--trace-mission" => {
@@ -46,7 +55,9 @@ fn run() -> Result<(), String> {
                 return mission_cli::trace(resources, &name, &arguments.collect::<Vec<_>>());
             }
             "--help" => {
-                println!("comanche3-mvp [--1080p | --4k] [--demo | --smoke] [--cockpit]");
+                println!(
+                    "comanche3-mvp [--1080p | --4k] [--demo | --smoke] [--cockpit] [--training <arquivo>]"
+                );
                 println!("comanche3-mvp --check-missions");
                 println!("comanche3-mvp --trace-mission <file.mis> ['condition, arg' ...]");
                 return Ok(());
@@ -56,24 +67,47 @@ fn run() -> Result<(), String> {
     }
 
     let terrain = Terrain::load(resources)?;
+    let route_source = match training_path.as_deref() {
+        None => Cow::Borrowed(include_bytes!("../missions/straight.route").as_slice()),
+        Some(path) => Cow::Owned(std::fs::read(path).map_err(|error| format!("{path}: {error}"))?),
+    };
+    let route = training_data::parse(&route_source).map_err(|error| {
+        format!(
+            "{}: {error}",
+            training_path.as_deref().unwrap_or("straight.route")
+        )
+    })?;
     let aircraft = Aircraft::load(resources)?;
     let mut orbit = Orbit::default();
     let mut flight = Flight::new(&terrain);
-    let program = Training::program()?;
-    let mut training = Training::new(&program, &mut flight);
+    for (index, &(dx, dz)) in route.offsets.iter().enumerate() {
+        let x = flight.x + dx;
+        let z = flight.z + dz;
+        if !(0.0..terrain.width as f32).contains(&x) || !(0.0..terrain.height as f32).contains(&z) {
+            return Err(format!("Ponto {} fora dos limites do terreno", index + 1));
+        }
+    }
+    let mut training = Training::new(&route, &mut flight);
     let mut frame = vec![0; size.0 * size.1];
     let scale = (size.0 / 640).max(1);
 
     if smoke {
-        check_training_guards(&terrain, &program)?;
+        check_training_guards(&terrain, &route)?;
         let (mut visited, total) = training.progress();
-        for tick in 0..360 {
-            flight.step(&terrain, demo_controls(tick as f32 / 60.0), 1.0 / 60.0);
+        for tick in 0..9000 * total {
+            flight.step(
+                &terrain,
+                demo_controls(&flight, tick as f32 / 60.0),
+                1.0 / 60.0,
+            );
             training.tick(&mut flight)?;
             let (current, _) = training.progress();
             if current > visited {
                 println!("Ponto {current}/{total} confirmado");
                 visited = current;
+            }
+            if flight.complete {
+                break;
             }
         }
         if !flight.complete || visited != total {
@@ -101,7 +135,7 @@ fn run() -> Result<(), String> {
         }
         let render_elapsed = start.elapsed();
         flight = Flight::new(&terrain);
-        training = Training::new(&program, &mut flight);
+        training = Training::new(&route, &mut flight);
         training.tick(&mut flight)?;
         if flight.complete || training.progress() != (0, total) {
             return Err("O treinamento manteve o progresso apos reiniciar".into());
@@ -139,7 +173,7 @@ fn run() -> Result<(), String> {
         let now = Instant::now();
         if window.is_key_pressed(Key::R, KeyRepeat::No) {
             flight = Flight::new(&terrain);
-            training = Training::new(&program, &mut flight);
+            training = Training::new(&route, &mut flight);
             started = now;
         }
         if window.is_key_pressed(Key::V, KeyRepeat::No) {
@@ -147,7 +181,7 @@ fn run() -> Result<(), String> {
         }
         let down = |key| window.is_key_down(key);
         let controls = if demo {
-            demo_controls(now.duration_since(started).as_secs_f32())
+            demo_controls(&flight, now.duration_since(started).as_secs_f32())
         } else {
             Controls {
                 accelerate: down(Key::W) || down(Key::Up),
@@ -202,38 +236,56 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn check_training_guards(terrain: &Terrain, program: &mission::Program) -> Result<(), String> {
+fn check_training_guards(
+    terrain: &Terrain,
+    route: &training_data::TrainingData,
+) -> Result<(), String> {
     let mut flight = Flight::new(terrain);
-    let mut training = Training::new(program, &mut flight);
-    flight.z = flight.waypoint_z;
+    let start = (flight.x, flight.z);
+    let mut training = Training::new(route, &mut flight);
+    (flight.x, flight.z) = (flight.waypoint_x, flight.waypoint_z);
     training.tick(&mut flight)?;
     if training.progress().0 != 0 || flight.complete {
         return Err("O treinamento aceitou uma passagem no solo".into());
     }
 
-    flight.z += 45.0;
-    for _ in 0..10 {
-        flight.step(
-            terrain,
-            Controls {
-                climb: true,
-                ..Controls::default()
-            },
-            1.0 / 60.0,
-        );
-    }
-    training.tick(&mut flight)?;
-    if !flight.is_airborne() || training.progress().0 != 0 || flight.complete {
-        return Err("O treinamento aceitou uma passagem fora de ordem".into());
+    if let Some(&(dx, dz)) = route.offsets.get(1) {
+        (flight.x, flight.z) = (start.0 + dx, start.1 + dz);
+        for _ in 0..10 {
+            flight.step(
+                terrain,
+                Controls {
+                    climb: true,
+                    ..Controls::default()
+                },
+                1.0 / 60.0,
+            );
+        }
+        training.tick(&mut flight)?;
+        if !flight.is_airborne() || training.progress().0 != 0 || flight.complete {
+            return Err("O treinamento aceitou uma passagem fora de ordem".into());
+        }
     }
     Ok(())
 }
 
-fn demo_controls(elapsed: f32) -> Controls {
+fn demo_controls(flight: &Flight, elapsed: f32) -> Controls {
+    if flight.complete {
+        return Controls {
+            brake: true,
+            ..Controls::default()
+        };
+    }
+    let aim = (flight.waypoint_x - flight.x).atan2(flight.waypoint_z - flight.z);
+    let error = (aim - flight.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    let aligned = error.abs() < 0.35;
     Controls {
         climb: elapsed < 1.0,
-        accelerate: elapsed < 3.5,
-        brake: elapsed >= 3.5,
+        accelerate: aligned && flight.speed < 24.0,
+        brake: !aligned || flight.speed > 26.0,
+        left: error < -0.025,
+        right: error > 0.025,
         ..Controls::default()
     }
 }
