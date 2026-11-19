@@ -1,39 +1,80 @@
-# Investigação do Comanche 3 para Rust
+<div align="center">
 
-MVP de voo em Rust com o terreno de `c1m3` lido diretamente do `RESOURCE.RES` da edição DOS. O objetivo do protótipo é decolar e cruzar o waypoint mostrado no HUD.
+# comanche3-decomp
 
-## Jogar
+**Reverse engineering and a modern Rust reimplementation of _Comanche 3_**
 
-Com Rust estável instalado, execute na pasta que contém o `RESOURCE.RES` original:
+[![Rust](https://img.shields.io/badge/Rust-2024%20edition-b7410e?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Status](https://img.shields.io/badge/status-playable%20MVP-blue)](#-progress)
+[![Platform](https://img.shields.io/badge/tested%20on-Linux-lightgrey)](#-building-and-running)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+
+_Fly over terrain from the original DOS game in a resizable window with 1080p and 4K render modes._
+
+</div>
+
+---
+
+## 🚁 About
+
+**comanche3-decomp** studies the DOS edition of NovaLogic’s _Comanche 3_ and builds a Rust engine around its original data formats. The playable MVP reads the color and elevation maps for `c1m3` directly from `RESOURCE.RES`, renders them with a CPU heightfield renderer, and lets you take off and fly through a waypoint. It uses simplified flight controls and a waypoint objective written for the prototype.
+
+> [!IMPORTANT]
+> You need your own copy of the DOS edition’s `RESOURCE.RES`. The repository contains the engine source, tools, and research notes. Original game data stays in your local installation.
+
+## 📊 Progress
+
+| Area | Status | Details |
+|---|---|---|
+| Resource archive and terrain | ✅ MVP | Direct `RESOURCE2xxx` loading and LZP1 decoding for the two `c1m3` terrain layers |
+| Voxel-style renderer | ✅ MVP | Perspective terrain, fog, waypoint HUD, and 1080p and 4K render modes |
+| Playable flight | ✅ MVP | Takeoff, steering, altitude control, and a waypoint completion trigger |
+| Mission scripting | 🔍 Under analysis | 2,124 rules across 41 campaign-named files · [trigger census](docs/mission-triggers.md) |
+| Original flight behavior and AI | ⏳ Planned | Compare behavior against the DOS executable |
+| Platform validation | 🟡 Partial | Interactive demo verified on Linux. Windows validation is pending. |
+
+## 🧭 Roadmap
+
+1. Load the original terrain and deliver a playable waypoint demo. **Complete.**
+2. Verify trigger timing, condition order, and AI state changes against the DOS game.
+3. Run an original mission end to end, then expand coverage across the single-player campaign.
+4. Validate Windows builds, rendering performance, and input on both platforms.
+
+## 🔧 Building and running
+
+Install stable Rust and a C toolchain. The Linux window uses X11, including XWayland on a Wayland desktop.
 
 ```sh
-cargo run --release -- --1080p
+git clone https://github.com/pedryvo/comanche3-decomp.git
+cd comanche3-decomp
+cargo build --release
+
+# Run from the directory containing the original RESOURCE.RES.
+cd /path/to/comanche3
+/path/to/comanche3-decomp/target/release/comanche3-mvp --1080p
 ```
 
-Use Espaço para subir, Shift para descer, W/S para acelerar e frear, A/D para virar, R para reiniciar e Esc para fechar. Segure Espaço e W para decolar na direção inicial do waypoint.
+Hold **Space + W** to take off toward the first waypoint. Use **W/S** to accelerate and brake, **A/D** to steer, **Space/Shift** to climb and descend, **R** to restart, and **Esc** to quit.
 
-Use `--4k` para renderizar a 3840×2160, `--demo` para reproduzir o voo automaticamente na janela e `--smoke` para verificar carregamento, renderização e conclusão do waypoint sem janela. A janela é redimensionável. O MVP usa renderização por CPU e foi validado no Linux.
+- `--1080p` renders at 1920 × 1080. `--4k` renders at 3840 × 2160.
+- `--demo` flies the waypoint route automatically in the window.
+- `--smoke` verifies terrain loading, waypoint completion, and rendering without opening a window. Combine it with either resolution flag.
 
-O código deste repositório usa [GPL-3.0-only](LICENSE). Os dados do jogo são fornecidos pelo jogador e ficam fora do repositório.
+## 🧰 Repository layout
 
-## Censo de gatilhos
+| Path | Purpose |
+|---|---|
+| [`src/terrain.rs`](src/terrain.rs) | Archive reader, LZP1 decoder, and terrain sampling |
+| [`src/render.rs`](src/render.rs) | CPU heightfield renderer and waypoint marker |
+| [`src/flight.rs`](src/flight.rs) | Prototype flight controls and waypoint logic |
+| [`src/main.rs`](src/main.rs) | Window, keyboard input, HUD, and smoke test |
+| [`tools/trigger_census.py`](tools/trigger_census.py) | Inventory of conditions, operators, and actions in extracted mission files |
+| [`docs/mission-triggers.md`](docs/mission-triggers.md) | Reproducible census and open questions, in Brazilian Portuguese |
 
-O contêiner analisado foi o `RESOURCE.RES` local, SHA-256
-`f86d208f967ca65eec9efb5f86c1c4defa21018d2daa3cc815f15b76022f679b`.
-A extração foi feita em diretório temporário com o `pup` do [Sioux](https://github.com/hanatos/sioux/tree/c5cadf87540d041991c76091a7897ab881bac5ed/pup), revisão
-`c5cadf87540d041991c76091a7897ab881bac5ed`. Para repetir, a partir deste repositório e com o `pup` já compilado:
+## 🔬 Methodology
 
-```sh
-mission_data=$(mktemp -d)
-/caminho/para/pup --plugin res --unpack "$PWD/RESOURCE.RES" "$mission_data/"
-python3 tools/trigger_census.py "$mission_data"
-```
+The [Sioux project](https://github.com/hanatos/sioux) provides a reference for archive and terrain formats. The Rust decoder’s elevation indices and RGB samples were compared against the Sioux decoder across the full 1024 × 1024 map. The next fidelity milestone is to compare mission events and flight behavior against the DOS game. The REA MCP server identified `C3.EXE` as DOS MZ x86. The current Ghidra checkpoint configuration prevented function-level analysis.
 
-- Os 41 arquivos nomeados como campanha têm 2.124 regras, 21 condições, 10 ações e três conectivos (`and`, `or`, `andn`). Cada regra tem uma ação e até oito condições. Quarenta arquivos têm `win`. O bloco de gatilhos de `c1m6` está vazio. A presença de um arquivo no pacote não confirma que ele aparece no menu.
-- Os cinco arquivos nomeados `mp` têm 26 regras, com `time`, `text` e `end`. O censo cobre os scripts e não mede a implementação de rede.
-- `c1m3` tem 53 regras, 14 tipos de condição e cinco ações. Sua regra de vitória combina quatro testes `destroyed` e um `intact` para o jogador. Dos 40 arquivos de campanha com regras, apenas `c1m3` e `c2m9` usam exclusivamente esse vocabulário.
-- `play`, `text`, `route` e `clearcounter` respondem por 1.891 das 2.124 ações. Essa frequência ajuda a ordenar o trabalho, mas uma ação rara ainda pode impedir o progresso de uma missão.
+## ⚖️ License
 
-## Próximas verificações
-
-Um interpretador comum pode carregar todos esses blocos. O próximo teste é comparar a regra de vitória de `c1m3` com uma execução no DOS e, em seguida, usar uma missão com `andn` e outra com `setai` para verificar a combinação de condições e a fronteira entre o script e a IA. A ordem da avaliação, o momento em que um gatilho dispara e as unidades de distância e tempo ainda precisam de confirmação em execução. A configuração do Ghidra no MCP do REA bloqueou a análise de funções do executável DOS MZ, portanto este censo usa os dados da distribuição e mede cobertura de sintaxe.
+This is an independent fan project. The repository’s source code is licensed under the [GNU General Public License v3.0 only](LICENSE). _Comanche 3_ and its original game data belong to their respective rights holders.
